@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Benefit Calculator – Internal Use</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --brand:#0054a6;
+    --brand-dark:#003f82;
+    --bg:#f2f4f7;
+    --card:#fff;
+    --muted:#777;
+  }
+
+  body { font-family: Arial, sans-serif; background:var(--bg); margin:0; padding:0; }
+
+  .box {
+    max-width: 720px;
+    background: var(--card);
+    margin: 24px auto;
+    padding: 18px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+
+  .header { position: relative; margin-bottom: 15px; }
+  .header img { width: 100%; height: 170px; object-fit: cover; border-radius: 8px; display:block; }
+  .header-text {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    background: rgba(0, 60, 120, 0.78);
+    padding: 8px 12px;
+    border-radius: 6px;
+  }
+  .header-text h2 { margin:0; color:#fff; font-size:18px; }
+  .header-text p { margin:2px 0 0; color:#e0e0e0; font-size:12px; }
+
+  table { width:100%; border-collapse: collapse; font-size:14px; }
+  caption { text-align:left; margin-bottom:8px; font-weight:600; }
+  th, td { border:1px solid #dcdcdc; padding:6px; text-align:center; vertical-align:middle; }
+  th { background:var(--brand); color:#fff; }
+
+  select, input[type="number"] {
+    width:100%;
+    padding:6px;
+    box-sizing:border-box;
+    font-size:14px;
+  }
+
+  .controls { display:flex; gap:10px; margin-top:10px; }
+  .controls button { flex:1; padding:10px; background:var(--brand); color:#fff; border:none; font-size:15px; border-radius:5px; }
+  .controls button:hover { background:var(--brand-dark); cursor:pointer; }
+
+  .small-btn { padding:6px 8px; font-size:13px; border-radius:4px; }
+
+  .total {
+    margin-top:15px;
+    font-size:18px;
+    text-align:center;
+    font-weight:bold;
+    color:#2e7d32;
+  }
+
+  .footer { margin-top:18px; text-align:center; font-size:11px; color:var(--muted); }
+
+  .remove-btn { background:#e53935; color:#fff; border:none; padding:6px 8px; border-radius:4px; }
+  .remove-btn:hover { background:#c62828; cursor:pointer; }
+
+  @media (max-width:640px) {
+    .box { margin: 12px; padding:12px; }
+    .header img { height:130px; }
+    th, td { font-size:13px; padding:4px; }
+  }
+</style>
+</head>
+<body>
+  <div class="box" role="application" aria-labelledby="title">
+    <div class="header">
+      <img src="logo.jpg" alt="Chevron platform visual (placeholder)" />
+      <div class="header-text">
+        <h2 id="title">Benefit Calculator</h2>
+        <p>Operational Cost Saving Estimation</p>
+      </div>
+    </div>
+
+    <table aria-describedby="tableDesc">
+      <caption id="tableDesc">List items for estimated saved cost. Use the presets dropdown to autofill typical values.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Type</th>
+          <th scope="col">Hours</th>
+          <th scope="col">Rate</th>
+          <th scope="col">Price ($)</th>
+          <th scope="col">Save Cost ($)</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rows" aria-live="polite"></tbody>
+    </table>
+
+    <div class="controls" aria-hidden="false">
+      <button id="addRowBtn" type="button">➕ Add Item</button>
+      <button id="calcBtn" type="button">📊 Calculate Total</button>
+      <button id="exportBtn" type="button" class="small-btn">⬇ Export CSV</button>
+    </div>
+
+    <div class="total" id="total" aria-live="polite">TOTAL SAVE COST = $0.00</div>
+
+    <div class="footer">
+      © Chevron – Internal Use Only<br>
+      This tool is for operational estimation purposes only.
+    </div>
+  </div>
+
+  <!-- Row template -->
+  <template id="rowTemplate">
+    <tr>
+      <td>
+        <label class="sr-only">Type</label>
+        <select aria-label="Type">
+          <option value="">Select</option>
+          <option value="gas_pacpp">Gas PACPP</option>
+          <option value="condy">CONDY PACPP</option>
+          <option value="remote">Gas Remote Platform</option>
+        </select>
+      </td>
+      <td>
+        <label class="sr-only">Hours</label>
+        <input type="number" aria-label="Hours" value="1" min="0" step="0.01" />
+      </td>
+      <td>
+        <label class="sr-only">Rate</label>
+        <input type="number" aria-label="Rate" value="0" min="0" step="0.01" />
+      </td>
+      <td>
+        <label class="sr-only">Price</label>
+        <input type="number" aria-label="Price" value="0" min="0" step="0.01" />
+      </td>
+      <td class="cost" data-raw="0" aria-label="Save Cost">$0.00</td>
+      <td>
+        <button type="button" class="remove-btn" title="Remove row">Remove</button>
+      </td>
+    </tr>
+  </template>
+
+<script>
+(function () {
+  // Preset values (kept the original numbers, change if needed)
+  const presets = {
+    gas_pacpp: { hours: 1, rate: 9.17, price: 6000 },
+    condy:     { hours: 1, rate: 396,  price: 60 },
+    remote:    { hours: 5, rate: 0.21, price: 6000 }
+  };
+
+  const rowsEl = document.getElementById('rows');
+  const addRowBtn = document.getElementById('addRowBtn');
+  const calcBtn = document.getElementById('calcBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const totalEl = document.getElementById('total');
+  const rowTemplate = document.getElementById('rowTemplate');
+
+  // Currency formatter (US dollars)
+  const currency = new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 2
+  });
+
+  function createRow() {
+    const node = rowTemplate.content.cloneNode(true);
+    const tr = node.querySelector('tr');
+    // Attach delegated listeners at table level; we still return the tr element
+    rowsEl.appendChild(tr);
+    return tr;
+  }
+
+  function addRow() {
+    const tr = createRow();
+    // automatically focus the first select
+    const sel = tr.querySelector('select');
+    sel.focus();
+  }
+
+  function removeRow(button) {
+    const tr = button.closest('tr');
+    if (tr) tr.remove();
+    // update total after removal in case user had previous calculation
+    calculate();
+  }
+
+  // Autofill when preset is selected
+  function autoFill(select) {
+    const val = select.value;
+    const tr = select.closest('tr');
+    if (!tr) return;
+    const hoursInput = tr.cells[1].querySelector('input');
+    const rateInput  = tr.cells[2].querySelector('input');
+    const priceInput = tr.cells[3].querySelector('input');
+
+    if (presets[val]) {
+      const p = presets[val];
+      hoursInput.value = p.hours;
+      rateInput.value  = p.rate;
+      priceInput.value = p.price;
+    }
+  }
+
+  // Validate a numeric input value, prevent negatives
+  function sanitizeNumberInput(input) {
+    let v = Number(input.value);
+    if (!isFinite(v) || v < 0) {
+      input.value = 0;
+      v = 0;
+    }
+    return v;
+  }
+
+  // Calculates cost with original formula: hours * rate * price
+  function calculate() {
+    let total = 0;
+    rowsEl.querySelectorAll('tr').forEach(tr => {
+      const hours = sanitizeNumberInput(tr.cells[1].querySelector('input'));
+      const rate  = sanitizeNumberInput(tr.cells[2].querySelector('input'));
+      const price = sanitizeNumberInput(tr.cells[3].querySelector('input'));
+
+      const cost = hours * rate * price;
+      // store raw numeric value for export
+      const costCell = tr.querySelector('.cost');
+      costCell.dataset.raw = String(cost);
+      costCell.textContent = currency.format(cost);
+      total += cost;
+    });
+
+    totalEl.textContent = 'TOTAL SAVE COST = ' + currency.format(total);
+  }
+
+  // Export table rows as CSV (simple)
+  function exportCSV() {
+    const rows = [];
+    rowsEl.querySelectorAll('tr').forEach(tr => {
+      const type = tr.cells[0].querySelector('select').value || '';
+      const hours = tr.cells[1].querySelector('input').value || '0';
+      const rate  = tr.cells[2].querySelector('input').value || '0';
+      const price = tr.cells[3].querySelector('input').value || '0';
+      const cost  = tr.querySelector('.cost').dataset.raw || '0';
+      rows.push([type, hours, rate, price, Number(cost).toFixed(2)]);
+    });
+
+    if (rows.length === 0) {
+      alert('No rows to export.');
+      return;
+    }
+
+    const header = ['type','hours','rate','price','save_cost'];
+    const csv = [header, ...rows].map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'benefit-calculator.csv';
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  // Event delegation for select changes, remove button clicks and input changes
+  rowsEl.addEventListener('change', (e) => {
+    const target = e.target;
+    if (target.matches('select')) {
+      autoFill(target);
+    }
+    // live recalc when user changes numbers
+    if (target.matches('input[type="number"]')) {
+      // sanitize negative entries immediately
+      sanitizeNumberInput(target);
+    }
+  });
+
+  rowsEl.addEventListener('input', () => {
+    // Optionally auto-recalculate on edit (comment out if not desired)
+    // calculate();
+  });
+
+  rowsEl.addEventListener('click', (e) => {
+    const btn = e.target;
+    if (btn.matches('.remove-btn')) {
+      removeRow(btn);
+    }
+  });
+
+  // Attach main controls
+  addRowBtn.addEventListener('click', () => addRow());
+  calcBtn.addEventListener('click', () => calculate());
+  exportBtn.addEventListener('click', () => exportCSV());
+
+  // Seed with one row
+  addRow();
+
+  // Expose calculate globally for debugging if needed
+  window.calculateBenefit = calculate;
+})();
+</script>
+</body>
+</html>
